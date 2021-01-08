@@ -43,6 +43,7 @@ DEFINE_string(name, "", "a dataset name, used in the output archive name");
 DEFINE_string(rs2_bag_path, "", "A RealSense bag file path.");
 DEFINE_string(camera_frame_name, "camera01",
               "Frame name to use for the camera model.");
+DEFINE_bool(live, true, "record from connected camera");
 
 typedef farm_ng::core::Event EventPb;
 using farm_ng::core::ArchiveProtobufAsJsonResource;
@@ -202,7 +203,7 @@ Image ImageSequenceWriter::WriteImageWithDepth(cv::Mat image, cv::Mat depthmap,
 class ConvertRS2BagProgram {
  public:
   ConvertRS2BagProgram(EventBus& bus, ConvertRS2BagConfiguration configuration,
-                       bool interactive)
+                       bool interactive, bool live)
       : bus_(bus), timer_(bus_.get_io_service()) {
     if (interactive) {
       status_.mutable_input_required_configuration()->CopyFrom(configuration);
@@ -230,11 +231,13 @@ class ConvertRS2BagProgram {
     rs2::config cfg;
     rs2::align align_to_color(RS2_STREAM_COLOR);
 
-    bool repeat_playback = false;
-    cfg.enable_device_from_file(
-        (farm_ng::core::GetBlobstoreRoot() / configuration_.rs2_bag().path())
-            .string(),
-        repeat_playback);
+    if (!configuration_.live()) {
+      bool repeat_playback = false;
+      cfg.enable_device_from_file(
+          (farm_ng::core::GetBlobstoreRoot() / configuration_.rs2_bag().path())
+              .string(),
+          repeat_playback);
+    }
     rs2::pipeline_profile profile = pipe.start(cfg);
 
     // Get depth scale to convert to mm
@@ -372,20 +375,23 @@ class ConvertRS2BagProgram {
 int Main(farm_ng::core::EventBus& bus) {
   farm_ng::perception::ConvertRS2BagConfiguration config;
   std::string dataset_name = FLAGS_name;
-  CHECK(boost::filesystem::exists(farm_ng::core::GetBlobstoreRoot() /
-                                  FLAGS_rs2_bag_path))
-      << "Invalid file name.";
-  if (dataset_name == "") {
-    dataset_name =
-        boost::filesystem::change_extension(FLAGS_rs2_bag_path, "").string();
+  if (!FLAGS_live) {
+    CHECK(boost::filesystem::exists(farm_ng::core::GetBlobstoreRoot() /
+                                    FLAGS_rs2_bag_path))
+        << "Invalid file name.";
+    if (dataset_name == "") {
+      dataset_name =
+          boost::filesystem::change_extension(FLAGS_rs2_bag_path, "").string();
+    }
   }
   config.set_name(dataset_name);
+  config.set_live(FLAGS_live);
   config.set_camera_frame_name(FLAGS_camera_frame_name);
   config.mutable_rs2_bag()->set_path(FLAGS_rs2_bag_path);
   config.mutable_rs2_bag()->set_content_type("application/x-rosbag");
 
-  farm_ng::perception::ConvertRS2BagProgram program(bus, config,
-                                                    FLAGS_interactive);
+  farm_ng::perception::ConvertRS2BagProgram program(
+      bus, config, FLAGS_interactive, FLAGS_live);
   return program.run();
 }
 
