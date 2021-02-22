@@ -13,6 +13,10 @@ message ConvertRS2BagConfiguration {
   // Name of the resulting resource
   string name = 1;
 
+  // Will stream be from a connected device
+  // instead of recorded bag file.
+  bool live = 4;
+
   string camera_frame_name = 2;
 
   // This resource will store the path to the input
